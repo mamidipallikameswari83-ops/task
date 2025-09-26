@@ -1,0 +1,248 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Medicine Reminder</title>
+  <style>
+    :root{--bg:#f7fafc;--card:#ffffff;--accent:#2563eb;--muted:#6b7280}
+    *{box-sizing:border-box}
+    body{font-family:Inter,system-ui,Segoe UI,Roboto,Arial; margin:0; background:var(--bg); color:#111}
+    .wrap{max-width:900px;margin:28px auto;padding:18px}
+    header{display:flex;align-items:center;justify-content:space-between}
+    h1{font-size:20px;margin:0}
+    p.lead{margin:6px 0 18px;color:var(--muted)}
+    .card{background:var(--card);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(16,24,40,0.06)}
+    form .row{display:flex;gap:8px;margin-bottom:10px}
+    input[type=text], input[type=time], select{flex:1;padding:10px;border-radius:8px;border:1px solid #e6e9ef}
+    button{background:var(--accent);color:#fff;border:none;padding:10px 12px;border-radius:8px;cursor:pointer}
+    button.secondary{background:#e6eefc;color:var(--accent)}
+    ul.list{list-style:none;padding:0;margin:12px 0}
+    li.item{display:flex;align-items:center;justify-content:space-between;padding:10px;border-radius:8px;border:1px solid #f1f5f9;margin-bottom:8px}
+    .meta{color:var(--muted);font-size:13px}
+    .controls button{margin-left:8px}
+    .small{font-size:13px}
+    .flex{display:flex;align-items:center}
+    .pill{background:#eef2ff;color:#3730a3;padding:6px 8px;border-radius:999px;font-size:13px;margin-right:8px}
+    @media (max-width:600px){.row{flex-direction:column}}
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <div>
+        <h1>Medicine Reminder</h1>
+        <p class="lead">Add medicines, set times, get notified. Works offline in your browser (uses localStorage).</p>
+      </div>
+      <div class="flex">
+        <button id="notify-perm">Enable Notifications</button>
+      </div>
+    </header>
+
+    <section class="card" style="margin-top:16px">
+      <form id="add-form">
+        <div class="row">
+          <input id="name" type="text" placeholder="Medicine name (e.g. Paracetamol)" required />
+          <input id="dose" type="text" placeholder="Dose (e.g. 500 mg)" />
+          <input id="time" type="time" required />
+        </div>
+        <div class="row">
+          <select id="repeat">
+            <option value="daily">Every day</option>
+            <option value="once">One time (today)</option>
+            <option value="weekdays">Weekdays (Mon-Fri)</option>
+            <option value="custom">Custom (select days)</option>
+          </select>
+          <div id="custom-days" style="display:none;flex:1">
+            <label class="small">Custom:</label>
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              <label><input type="checkbox" value="1"/> Mon</label>
+              <label><input type="checkbox" value="2"/> Tue</label>
+              <label><input type="checkbox" value="3"/> Wed</label>
+              <label><input type="checkbox" value="4"/> Thu</label>
+              <label><input type="checkbox" value="5"/> Fri</label>
+              <label><input type="checkbox" value="6"/> Sat</label>
+              <label><input type="checkbox" value="0"/> Sun</label>
+            </div>
+          </div>
+          <button type="submit">Add</button>
+        </div>
+      </form>
+
+      <div style="margin-top:12px">
+        <strong>Scheduled Medicines</strong>
+        <ul id="list" class="list"></ul>
+      </div>
+    </section>
+
+    <section style="margin-top:14px" class="card">
+      <div style="display:flex;justify-content:space-between;align-items:center">
+        <div>
+          <strong>Controls</strong>
+          <p class="small" style="margin:4px 0">Test a notification or clear data.</p>
+        </div>
+        <div class="controls">
+          <button id="test-notif" class="secondary">Test Notification</button>
+          <button id="clear" class="secondary">Clear All</button>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+  <script>
+    // Medicine reminder app logic
+    const form = document.getElementById('add-form');
+    const listEl = document.getElementById('list');
+    const notifyBtn = document.getElementById('notify-perm');
+    const testBtn = document.getElementById('test-notif');
+    const clearBtn = document.getElementById('clear');
+    const repeatSel = document.getElementById('repeat');
+    const customDaysWrap = document.getElementById('custom-days');
+
+    let meds = JSON.parse(localStorage.getItem('meds')||'[]');
+    let lastNotified = JSON.parse(localStorage.getItem('lastNotified')||'{}');
+
+    // Utility: save
+    function save(){
+      localStorage.setItem('meds', JSON.stringify(meds));
+      localStorage.setItem('lastNotified', JSON.stringify(lastNotified));
+    }
+
+    // Request notification permission
+    notifyBtn.addEventListener('click', async ()=>{
+      if (!('Notification' in window)) return alert('Notifications not supported in this browser');
+      let p = await Notification.requestPermission();
+      alert('Notification permission: '+p);
+    });
+
+    // Show/hide custom days
+    repeatSel.addEventListener('change', ()=>{
+      customDaysWrap.style.display = repeatSel.value==='custom' ? 'block' : 'none';
+    });
+
+    // Form submit
+    form.addEventListener('submit', e=>{
+      e.preventDefault();
+      const name = document.getElementById('name').value.trim();
+      const dose = document.getElementById('dose').value.trim();
+      const time = document.getElementById('time').value;
+      const repeat = repeatSel.value;
+      let days = null;
+      if (repeat==='custom'){
+        days = Array.from(customDaysWrap.querySelectorAll('input[type=checkbox]'))
+          .filter(c=>c.checked).map(c=>Number(c.value));
+        if (days.length===0){alert('Pick at least one day for custom');return}
+      }
+
+      const id = Date.now().toString();
+      meds.push({id,name,dose,time,repeat,days});
+      save();
+      form.reset();
+      customDaysWrap.style.display='none';
+      renderList();
+    });
+
+    // Render list
+    function renderList(){
+      listEl.innerHTML='';
+      if (meds.length===0) listEl.innerHTML='<li class="small" style="color:var(--muted)">No medicines yet</li>';
+      meds.forEach(m=>{
+        const li = document.createElement('li'); li.className='item';
+        const left = document.createElement('div');
+        left.innerHTML = `<strong>${escapeHtml(m.name)}</strong> <div class="meta">${m.dose||''} — ${formatRepeat(m)}</div>`;
+        const right = document.createElement('div');
+        right.innerHTML = `<div class="small">${m.time}</div>`;
+        const controls = document.createElement('div'); controls.className='flex';
+        const del = document.createElement('button'); del.textContent='Delete'; del.className='secondary';
+        del.addEventListener('click', ()=>{ meds = meds.filter(x=>x.id!==m.id); save(); renderList(); });
+        controls.appendChild(del);
+        li.append(left, right, controls);
+        listEl.appendChild(li);
+      });
+    }
+
+    function escapeHtml(s){ return s.replace(/[&<>\"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','\\':'\\\\','"':'&quot;'}[c])); }
+
+    function formatRepeat(m){
+      if (m.repeat==='daily') return 'Every day';
+      if (m.repeat==='once') return 'One time';
+      if (m.repeat==='weekdays') return 'Mon-Fri';
+      if (m.repeat==='custom') return 'Days: '+m.days.map(d=>['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]).join(', ');
+      return '';
+    }
+
+    // Checker runs every 20 seconds to find due meds
+    function checkDue(){
+      const now = new Date();
+      const nowH = now.getHours().toString().padStart(2,'0');
+      const nowM = now.getMinutes().toString().padStart(2,'0');
+      const todayDow = now.getDay();
+      meds.forEach(m=>{
+        // skip if one-time and date is in past? one-time treated as today at the chosen time
+        let should = false;
+        if (m.repeat==='daily') should = true;
+        else if (m.repeat==='weekdays') should = (todayDow>=1 && todayDow<=5);
+        else if (m.repeat==='once') should = true; // will trigger once when time matches
+        else if (m.repeat==='custom') should = (m.days && m.days.includes(todayDow));
+
+        if (!should) return;
+        if (m.time===`${nowH}:${nowM}`){
+          const key = m.id + '_' + now.toDateString() + '_' + m.time;
+          if (!lastNotified[key]){
+            notifyUser(m);
+            lastNotified[key]=Date.now();
+            save();
+          }
+        }
+      });
+    }
+
+    // Notification: desktop push + sound + visual alert
+    function notifyUser(m){
+      const title = `Medicine: ${m.name}`;
+      const body = (m.dose? m.dose + ' — ' : '') + 'Time to take your medicine ('+m.time+')';
+      if (Notification && Notification.permission==='granted'){
+        new Notification(title,{body});
+      } else {
+        alert(title + '\n' + body);
+      }
+      beep();
+    }
+
+    // small beep using WebAudio
+    function beep(){
+      try{
+        const ctx = new (window.AudioContext||window.webkitAudioContext)();
+        const o = ctx.createOscillator(); const g = ctx.createGain();
+        o.connect(g); g.connect(ctx.destination);
+        o.type='sine'; o.frequency.value=880; g.gain.value=0.05;
+        o.start(); setTimeout(()=>{ o.stop(); ctx.close(); }, 500);
+      }catch(e){console.log('beep failed',e)}
+    }
+
+    // Test notification button
+    testBtn.addEventListener('click', ()=>{ notifyUser({name:'Test medicine',dose:'1 pill',time:new Date().toLocaleTimeString()}); });
+
+    // Clear button
+    clearBtn.addEventListener('click', ()=>{
+      if (!confirm('Clear all medicines?')) return;
+      meds = []; lastNotified = {}; save(); renderList();
+    });
+
+    // initial render
+    renderList();
+    // start periodic checking
+    setInterval(checkDue, 20*1000);
+    // also check immediately in case time matches exactly
+    setTimeout(checkDue, 1000);
+
+    // try to keep app responsive after system sleep: also check on visibilitychange
+    document.addEventListener('visibilitychange', ()=>{ if (!document.hidden) checkDue(); });
+
+    // save on unload
+    window.addEventListener('beforeunload', save);
+
+  </script>
+</body>
+</html>
